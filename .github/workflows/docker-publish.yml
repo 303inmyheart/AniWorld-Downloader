@@ -6,6 +6,12 @@ name: Build Docker Image
 # documentation.
 
 on:
+  push:
+    branches: [models]
+    paths:
+      - Dockerfile
+      - src/**
+      - .github/workflows/docker-publish.yml
   release:
     types: [published]
   workflow_dispatch:
@@ -71,6 +77,12 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha
+            type=raw,value=intel-qsv,enable=${{ github.ref == 'refs/heads/models' }}
+            type=semver,pattern={{version}}
+
 
       # Build and push Docker image with Buildx
       # https://github.com/docker/build-push-action
@@ -79,7 +91,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          push: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.push == true) }}
+          push: ${{ github.event_name == 'push' || github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.push == true) }}
           platforms: linux/amd64,linux/arm64 # <--- Hinzugefügt für Multi-Arch Support
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -92,7 +104,7 @@ jobs:
       # transparency data even for private images, pass --force to cosign below.
       # https://github.com/sigstore/cosign
       - name: Sign the published Docker image
-        if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.push == true) }}
+        if: ${{ github.event_name == 'push' || github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.push == true) }}
         env:
           # https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-an-intermediate-environment-variable
           TAGS: ${{ steps.meta.outputs.tags }}
