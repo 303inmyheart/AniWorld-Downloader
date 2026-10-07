@@ -1,7 +1,7 @@
 # ==========================================
 # Stage 1: Build virtual env and dependencies
 # ==========================================
-FROM python:3.13-slim AS builder
+FROM python:3.13-slim-trixie AS builder
 
 WORKDIR /build
 
@@ -75,7 +75,7 @@ RUN find /opt/venv -type d -name "__pycache__" -exec rm -rf {} + && \
 # ==========================================
 # Stage 2: Final minimal runner image
 # ==========================================
-FROM python:3.13-slim AS runner
+FROM python:3.13-slim-trixie AS runner
 
 WORKDIR /app
 
@@ -93,6 +93,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         echo "Trusting custom proxy CA certificate..." && \
         echo "$PROXY_CA_CERT_B64" | base64 -d > /usr/local/share/ca-certificates/proxy-ca.crt && \
         update-ca-certificates; \
+    fi
+
+# Intel's full-feature media driver and VPL GPU runtime are amd64-only.
+# The free driver omits media kernels needed by some encoding modes.
+RUN sed -i 's/^Components: main$/Components: main non-free/' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && \
+    if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+        apt-get install -y --no-install-recommends intel-media-va-driver-non-free libmfx-gen1.2 vainfo; \
     fi
 
 # Create unprivileged user

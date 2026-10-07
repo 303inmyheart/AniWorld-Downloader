@@ -460,6 +460,32 @@ class DownloadCancelled(Exception):
     """Raised when we killed the download ourselves, not when it failed."""
 
 
+def _configure_qsv_args(args):
+    """Configure Intel encoding consistently for all download paths.
+
+    Decoding stays in software: providers can serve codecs unsupported by the
+    GPU. QSV accepts NV12 software frames and performs the upload itself.
+    """
+    if not any(
+        option in ("-vcodec", "-c:v", "-codec:v")
+        and args[index + 1] in ("h264_qsv", "hevc_qsv", "av1_qsv")
+        for index, option in enumerate(args[:-1])
+    ):
+        return args
+    args = list(args)
+    # Explicit selection is useful when a host exposes multiple render nodes.
+    device = os.getenv("ANIWORLD_QSV_DEVICE", "").strip()
+    if device and platform.system() == "Linux":
+        args[1:1] = ["-init_hw_device", f"qsv=aniworld:hw,child_device={device}"]
+    output_options = []
+    if "-pix_fmt" not in args and "-vf" not in args:
+        output_options += ["-pix_fmt", "nv12"]
+    if not any(option in args for option in ("-global_quality", "-b:v", "-vb")):
+        output_options += ["-global_quality", "23"]
+    args[-1:-1] = output_options
+    return args
+
+
 def _run_ffmpeg_with_progress(node, overwrite_output=True, label=""):
     """Run an ffmpeg node and stream its progress output cleanly.
 
@@ -486,7 +512,9 @@ def _run_ffmpeg_with_progress(node, overwrite_output=True, label=""):
     # Use shorter stats_period for smoother progress (1s in non-debug, 10s in debug)
     stats_period = "10" if debug_mode else "1"
 
-    args = ffmpeg.compile(node, overwrite_output=overwrite_output)
+    args = _configure_qsv_args(
+        ffmpeg.compile(node, overwrite_output=overwrite_output)
+    )
     if "-stats_period" not in args:
         args.insert(-1, "-stats_period")
         args.insert(-1, stats_period)

@@ -236,3 +236,33 @@ Questions about content hosted by another service should be directed to that ser
 ## License
 
 AniWorld Downloader is available under the [MIT License](LICENSE).
+
+
+### Intel Quick Sync in Docker / TrueNAS
+
+The amd64 image includes Intel's full-feature iHD VAAPI driver, the VPL GPU
+runtime, and `vainfo`. Build this fork's Dockerfile and deploy the resulting
+image in TrueNAS; the upstream image in the sample Compose file does not include
+local changes. Allocate the Intel GPU to the app and add the host video/render
+numeric group IDs as supplemental groups. The container user must have access
+to `/dev/dri/renderD128` (check `id` and `ls -ln /dev/dri`).
+
+Set `ANIWORLD_VIDEO_CODEC=h264_qsv` (or `hevc_qsv`). Optionally set
+`ANIWORLD_QSV_DEVICE=/dev/dri/renderD128` to explicitly select a render node.
+The downloader uses NV12 input frames and QSV quality 23 by default. Decoding
+remains in software for compatibility with different provider codecs.
+`copy` performs no video encoding; encoder availability depends on the GPU.
+
+Check the deployed image as its normal application user:
+
+```sh
+vainfo --display drm --device /dev/dri/renderD128
+ffmpeg -hide_banner -f lavfi -i testsrc2=size=1280x720:rate=30 -t 3 \
+  -vf format=nv12 -c:v h264_qsv -global_quality 23 -f null -
+```
+
+`Error creating a MFX session: -9` can indicate missing GPU runtime/device
+access. A loaded iHD driver followed by unsupported encoding parameters needs
+capability checks via `vainfo`; use the full-feature driver supplied by this
+image. Host kernel/firmware support is still required. Installing packages
+manually inside a running container is not persistent across recreation.
