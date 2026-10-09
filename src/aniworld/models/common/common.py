@@ -1163,40 +1163,11 @@ def _download_full_stream(
 ):
     """Fetch audio+video into `temp_full`.
 
-    Download supported HLS playlists concurrently, then encode/remux locally.
-    Unsupported playlists retain the manual fetcher and remote FFmpeg fallback.
+    For an HLS playlist we first try the manual segment fetcher (needed for
+    hosters that disguise segments with non-media extensions); it opts out for
+    normal/encrypted playlists, which then take the FFmpeg path.
     """
     if ".m3u8" in stream_url.split("?", 1)[0].lower():
-        from .hls import cleanup_temp_files
-
-        temp_prefix = temp_full.with_suffix(".parallel_hls")
-        result = _hls_rendition_download(
-            stream_url, temp_prefix, headers, audio_code, ep_label
-        )
-        if result is not None:
-            video_path, audio_path = result
-            try:
-                if audio_path is not None:
-                    node = ffmpeg.output(
-                        ffmpeg.input(str(video_path)).video,
-                        ffmpeg.input(str(audio_path)).audio,
-                        str(temp_full),
-                        vcodec=video_codec,
-                        acodec="copy",
-                        **stream_metadata,
-                    )
-                else:
-                    node = ffmpeg.input(str(video_path)).output(
-                        str(temp_full),
-                        vcodec=video_codec,
-                        acodec="copy",
-                        **stream_metadata,
-                    )
-                _run_ffmpeg_with_progress(node, label=ep_label)
-                return
-            finally:
-                cleanup_temp_files(temp_prefix)
-
         temp_ts = temp_full.with_suffix(".seg.ts")
         try:
             _download_hls_manual(stream_url, headers, temp_ts, ep_label)
